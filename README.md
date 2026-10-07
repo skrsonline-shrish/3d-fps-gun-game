@@ -121,7 +121,7 @@ canvas {
 }
 
 .panel {
-  width: min(460px, 82vw);
+  width: min(500px, 85vw);
   padding: 28px 24px;
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -155,6 +155,29 @@ h2 {
   margin: 16px 0;
   font-size: 1rem;
   color: var(--text);
+}
+
+.classGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+
+.classBtn {
+  padding: 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.classBtn.active {
+  background: linear-gradient(135deg, var(--accent), #8dfac7);
+  color: #061e2a;
 }
 
 .panel ul {

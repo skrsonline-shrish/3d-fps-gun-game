@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 
 const healthEl = document.getElementById('health');
+const classNameEl = document.getElementById('className');
 const ammoEl = document.getElementById('ammo');
 const scoreEl = document.getElementById('score');
 const weaponNameEl = document.getElementById('weaponName');
@@ -11,10 +12,11 @@ const startOverlay = document.getElementById('startOverlay');
 const gameOverOverlay = document.getElementById('gameOver');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
+const classButtons = [...document.querySelectorAll('.classBtn')];
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x7fb5ff);
-scene.fog = new THREE.Fog(0x7fb5ff, 22, 60);
+scene.fog = new THREE.Fog(0x7fb5ff, 22, 65);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 250);
 camera.rotation.order = 'YXZ';
@@ -32,6 +34,18 @@ const keys = {};
 const pointer = { locked: false };
 
 const arenaSize = 18;
+const classes = {
+  Vanguard: { health: 120, speed: 9.5, dash: 18, ability: 'Shield Wall', abilityCooldown: 8 },
+  Striker: { health: 100, speed: 11, dash: 22, ability: 'Burst Pulse', abilityCooldown: 7 },
+  Ranger: { health: 90, speed: 10.5, dash: 20, ability: 'Scan Pulse', abilityCooldown: 9 },
+};
+
+const weapons = [
+  { name: 'Rifle', magSize: 18, reserve: 90, damage: 22, fireRate: 0.15, spread: 0.015, pellets: 1 },
+  { name: 'Shotgun', magSize: 6, reserve: 30, damage: 11, fireRate: 0.62, spread: 0.18, pellets: 7 },
+  { name: 'SMG', magSize: 30, reserve: 120, damage: 10, fireRate: 0.09, spread: 0.04, pellets: 1 },
+];
+
 const player = {
   position: new THREE.Vector3(0, 1.7, 10),
   yaw: 0,
@@ -43,19 +57,13 @@ const player = {
   dashTimer: 0,
   dashVelocity: new THREE.Vector3(),
   healCooldown: 0,
+  abilityCooldown: 0,
   weaponIndex: 0,
+  selectedClass: 'Vanguard',
+  shieldTimer: 0,
 };
 
-const weapons = [
-  { name: 'Rifle', magSize: 18, reserve: 90, damage: 22, fireRate: 0.15, spread: 0.015, pellets: 1 },
-  { name: 'Shotgun', magSize: 6, reserve: 30, damage: 11, fireRate: 0.62, spread: 0.18, pellets: 7 },
-  { name: 'SMG', magSize: 30, reserve: 120, damage: 10, fireRate: 0.09, spread: 0.04, pellets: 1 },
-];
-
-const inventory = weapons.map((weapon) => ({
-  mag: weapon.magSize,
-  reserve: weapon.reserve,
-}));
+const inventory = weapons.map((weapon) => ({ mag: weapon.magSize, reserve: weapon.reserve }));
 
 const state = {
   started: false,
@@ -80,7 +88,20 @@ function updateHUD() {
   healthEl.textContent = `${Math.max(0, Math.ceil(player.health))}`;
   ammoEl.textContent = `${inventoryState.mag} / ${inventoryState.reserve}`;
   weaponNameEl.textContent = weapon.name;
+  classNameEl.textContent = player.selectedClass;
   scoreEl.textContent = `${state.score}`;
+}
+
+function setSelectedClass(name) {
+  player.selectedClass = name;
+  const cfg = classes[name];
+  player.speed = cfg.speed;
+  player.health = cfg.health;
+  classButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.class === name);
+  });
+  statusText.textContent = `${name} selected`;
+  updateHUD();
 }
 
 function setWeapon(index) {
@@ -214,11 +235,13 @@ function resetMatch() {
   player.position.set(0, 1.7, 10);
   player.yaw = 0;
   player.pitch = 0;
-  player.health = 100;
+  player.health = classes[player.selectedClass].health;
   player.fireCooldown = 0;
   player.dashCooldown = 0;
   player.healCooldown = 0;
+  player.abilityCooldown = 0;
   player.dashTimer = 0;
+  player.shieldTimer = 0;
   player.weaponIndex = 0;
 
   inventory.length = 0;
@@ -272,7 +295,7 @@ function collectPickup(pickup) {
   state.pickups = state.pickups.filter((item) => item !== pickup);
 
   if (pickup.type === 'health') {
-    player.health = Math.min(100, player.health + 28);
+    player.health = Math.min(classes[player.selectedClass].health, player.health + 28);
     statusText.textContent = 'Health boost picked up';
   } else {
     inventory.forEach((slot) => {
@@ -284,41 +307,54 @@ function collectPickup(pickup) {
   updateHUD();
 }
 
-function createEnemy() {
+function createEnemy(type = 'scout') {
   const group = new THREE.Group();
+  const enemyType = type === 'boss' ? 'boss' : type;
 
+  const bodyColor = enemyType === 'brute' ? 0xe6785a : enemyType === 'ranged' ? 0x7a8aff : enemyType === 'boss' ? 0xff6b6b : 0xe66c5d;
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.2, 1.5, 1.2),
-    new THREE.MeshStandardMaterial({ color: 0xe66c5d, emissive: 0x4b1717, emissiveIntensity: 0.4 })
+    new THREE.BoxGeometry(enemyType === 'boss' ? 1.8 : 1.2, enemyType === 'boss' ? 2.2 : 1.5, enemyType === 'boss' ? 1.8 : 1.2),
+    new THREE.MeshStandardMaterial({ color: bodyColor, emissive: enemyType === 'boss' ? 0x5c1111 : 0x4b1717, emissiveIntensity: 0.45 })
   );
   body.castShadow = true;
 
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.46, 16, 16),
+    new THREE.SphereGeometry(enemyType === 'boss' ? 0.72 : 0.46, 16, 16),
     new THREE.MeshStandardMaterial({ color: 0xf5d3b7 })
   );
-  head.position.y = 1.08;
+  head.position.y = enemyType === 'boss' ? 1.5 : 1.08;
   head.castShadow = true;
 
   const gun = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 0.18, 0.76),
+    new THREE.BoxGeometry(0.18, 0.18, enemyType === 'boss' ? 1.2 : 0.76),
     new THREE.MeshStandardMaterial({ color: 0x1a1d20 })
   );
-  gun.position.set(0.7, 0.38, 0.25);
+  gun.position.set(enemyType === 'boss' ? 1.1 : 0.7, enemyType === 'boss' ? 0.7 : 0.38, 0.25);
   gun.rotation.z = -Math.PI / 2;
 
   group.add(body, head, gun);
-  group.position.set((Math.random() - 0.5) * 24, 0.75, (Math.random() - 0.5) * 24);
+  group.position.set((Math.random() - 0.5) * 24, enemyType === 'boss' ? 1.1 : 0.75, (Math.random() - 0.5) * 24);
   scene.add(group);
+
+  const config = {
+    boss: { health: 220 + state.round * 25, speed: 2.0 + state.round * 0.15, damage: 18, attackRange: 2.4 },
+    brute: { health: 95 + state.round * 13, speed: 1.8 + state.round * 0.12, damage: 16, attackRange: 2.1 },
+    ranged: { health: 60 + state.round * 10, speed: 2.3 + state.round * 0.15, damage: 13, attackRange: 8 },
+    scout: { health: 46 + state.round * 8, speed: 3 + state.round * 0.2, damage: 9, attackRange: 1.9 },
+  }[enemyType];
 
   const enemy = {
     group,
     body,
     head,
-    health: 55 + state.round * 8,
-    speed: 2.4 + state.round * 0.2,
+    type: enemyType,
+    health: config.health,
+    speed: config.speed,
+    damage: config.damage,
+    attackRange: config.attackRange,
     attackCooldown: 0,
     flash: 0,
+    slowed: 0,
   };
 
   enemy.body.userData.enemy = enemy;
@@ -327,15 +363,23 @@ function createEnemy() {
 }
 
 function spawnWave() {
-  const enemyCount = Math.min(3 + state.round, 12);
+  const waveTypeRoll = state.round % 5 === 0 ? 'boss' : Math.random() > 0.7 ? 'ranged' : Math.random() > 0.5 ? 'brute' : 'scout';
+  const enemyCount = waveTypeRoll === 'boss' ? 1 : Math.min(3 + state.round, 12);
+
   for (let i = 0; i < enemyCount; i += 1) {
-    createEnemy();
+    const type = waveTypeRoll === 'boss' ? 'boss' : i % 4 === 0 ? 'brute' : i % 3 === 0 ? 'ranged' : 'scout';
+    createEnemy(type);
   }
-  statusText.textContent = `Round ${state.round}`;
+
+  if (waveTypeRoll === 'boss') {
+    statusText.textContent = `Boss round ${state.round}`;
+  } else {
+    statusText.textContent = `Round ${state.round}`;
+  }
 }
 
 function removeEnemy(enemy) {
-  state.score += 100;
+  state.score += enemy.type === 'boss' ? 500 : 100;
   scene.remove(enemy.group);
   state.enemies = state.enemies.filter((item) => item !== enemy);
 
@@ -435,7 +479,8 @@ function activateDash() {
     dir.copy(forward);
   }
 
-  player.dashVelocity.copy(dir.multiplyScalar(22));
+  const dashSpeed = classes[player.selectedClass].dash;
+  player.dashVelocity.copy(dir.multiplyScalar(dashSpeed));
   player.dashTimer = 0.18;
   player.dashCooldown = 2.2;
   statusText.textContent = 'Dash!';
@@ -443,14 +488,43 @@ function activateDash() {
 
 function useHeal() {
   if (state.gameOver || player.healCooldown > 0 || !state.started) return;
-  if (player.health >= 100) {
+  if (player.health >= classes[player.selectedClass].health) {
     statusText.textContent = 'Health full';
     return;
   }
 
-  player.health = Math.min(100, player.health + 35);
+  player.health = Math.min(classes[player.selectedClass].health, player.health + 35);
   player.healCooldown = 8;
   statusText.textContent = 'Heal used';
+  updateHUD();
+}
+
+function useAbility() {
+  if (state.gameOver || player.abilityCooldown > 0 || !state.started) return;
+
+  const ability = classes[player.selectedClass].ability;
+
+  if (player.selectedClass === 'Vanguard') {
+    player.shieldTimer = 5;
+    player.health = Math.min(classes[player.selectedClass].health, player.health + 18);
+    statusText.textContent = 'Shield Wall active';
+  } else if (player.selectedClass === 'Striker') {
+    state.enemies.forEach((enemy) => {
+      const dist = enemy.group.position.distanceTo(player.position);
+      if (dist < 4) {
+        enemy.health -= 40;
+        if (enemy.health <= 0) removeEnemy(enemy);
+      }
+    });
+    statusText.textContent = 'Burst Pulse unleashed';
+  } else if (player.selectedClass === 'Ranger') {
+    state.enemies.forEach((enemy) => {
+      enemy.slowed = 3;
+    });
+    statusText.textContent = 'Scan Pulse slows enemies';
+  }
+
+  player.abilityCooldown = classes[player.selectedClass].abilityCooldown;
   updateHUD();
 }
 
@@ -475,6 +549,10 @@ function updatePlayer(delta) {
     player.position.addScaledVector(moveDir, player.speed * delta);
   }
 
+  if (player.shieldTimer > 0) {
+    player.shieldTimer = Math.max(0, player.shieldTimer - delta);
+  }
+
   player.position.x = THREE.MathUtils.clamp(player.position.x, -arenaSize, arenaSize);
   player.position.z = THREE.MathUtils.clamp(player.position.z, -arenaSize, arenaSize);
 
@@ -485,6 +563,7 @@ function updatePlayer(delta) {
   if (player.fireCooldown > 0) player.fireCooldown = Math.max(0, player.fireCooldown - delta);
   if (player.dashCooldown > 0) player.dashCooldown = Math.max(0, player.dashCooldown - delta);
   if (player.healCooldown > 0) player.healCooldown = Math.max(0, player.healCooldown - delta);
+  if (player.abilityCooldown > 0) player.abilityCooldown = Math.max(0, player.abilityCooldown - delta);
 }
 
 function updateEnemies(delta) {
@@ -492,32 +571,42 @@ function updateEnemies(delta) {
     const toPlayer = new THREE.Vector3().subVectors(player.position, enemy.group.position);
     const distance = toPlayer.length();
 
-    if (distance > 0.001) {
-      toPlayer.normalize();
-      enemy.group.position.addScaledVector(toPlayer, enemy.speed * delta);
+    if (enemy.slowed > 0) {
+      enemy.slowed = Math.max(0, enemy.slowed - delta);
     }
 
-    enemy.group.lookAt(player.position.x, 0.75, player.position.z);
-    enemy.group.position.y = 0.75;
+    const speedFactor = enemy.slowed > 0 ? 0.55 : 1;
+    if (distance > 0.001) {
+      toPlayer.normalize();
+      const moveAmount = enemy.speed * speedFactor * delta;
+      enemy.group.position.addScaledVector(toPlayer, moveAmount);
+    }
+
+    enemy.group.lookAt(player.position.x, enemy.group.position.y, player.position.z);
+    enemy.group.position.y = enemy.type === 'boss' ? 1.1 : 0.75;
 
     if (enemy.flash > 0) {
       enemy.flash = Math.max(0, enemy.flash - delta);
       enemy.body.material.emissiveIntensity = 0.9;
       enemy.head.material.emissiveIntensity = 0.15;
     } else {
-      enemy.body.material.emissiveIntensity = 0.4;
+      enemy.body.material.emissiveIntensity = enemy.type === 'boss' ? 0.75 : 0.45;
       enemy.head.material.emissiveIntensity = 0;
     }
 
     enemy.attackCooldown = Math.max(0, enemy.attackCooldown - delta);
-    if (distance < 2.1 && enemy.attackCooldown <= 0) {
-      player.health -= 11;
-      enemy.attackCooldown = 1.1;
-      statusText.textContent = 'Enemy hit';
+
+    if (distance < enemy.attackRange && enemy.attackCooldown <= 0) {
+      const reducedDamage = player.shieldTimer > 0 ? Math.max(0, enemy.damage - 6) : enemy.damage;
+      player.health -= reducedDamage;
+      enemy.attackCooldown = enemy.type === 'ranged' ? 1.7 : 1.1;
+      statusText.textContent = player.shieldTimer > 0 ? 'Shield absorbed damage' : 'Enemy hit';
+
       if (player.health <= 0) {
         player.health = 0;
         endMatch();
       }
+
       updateHUD();
     }
   });
@@ -556,6 +645,7 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Digit3') setWeapon(2);
   if (event.code === 'KeyR') reloadWeapon();
   if (event.code === 'KeyE') useHeal();
+  if (event.code === 'KeyQ') useAbility();
   if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') activateDash();
 
   if (event.code === 'Space' && !pointer.locked && state.started && !state.gameOver) {
@@ -599,11 +689,16 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+classButtons.forEach((button) => {
+  button.addEventListener('click', () => setSelectedClass(button.dataset.class));
+});
+
 function startGame() {
   state.started = true;
   state.gameOver = false;
   startOverlay.classList.add('hidden');
   gameOverOverlay.classList.add('hidden');
+  setSelectedClass(player.selectedClass);
   resetMatch();
   renderer.domElement.requestPointerLock();
 }
@@ -615,6 +710,7 @@ function setup() {
   createLights();
   createArena();
   createWeaponModel();
+  setSelectedClass('Vanguard');
   updateHUD();
   animate();
 }

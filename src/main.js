@@ -6,13 +6,14 @@
     <title>Arena Strike 3D</title>
     <meta
       name="description"
-      content="A polished 3D arena shooter with weapon switching, rounds, pickups, and fast arcade gameplay."
+      content="A more advanced 3D FPS arena shooter with class selection, boss waves, and abilities."
     />
   </head>
   <body>
     <div id="hud">
       <div class="topbar">
         <span>HP: <strong id="health">100</strong></span>
+        <span>Class: <strong id="className">Vanguard</strong></span>
         <span>Weapon: <strong id="weaponName">Rifle</strong></span>
         <span>Ammo: <strong id="ammo">18 / 90</strong></span>
         <span>Score: <strong id="score">0</strong></span>
@@ -29,13 +30,22 @@
       <div class="panel">
         <p class="eyebrow">Arcade FPS</p>
         <h1>Arena Strike</h1>
-        <p>Move with WASD, aim with the mouse, and survive the wave.</p>
+        <p>Choose a class and survive escalating waves.</p>
+
+        <div class="classGrid">
+          <button class="classBtn active" data-class="Vanguard">Vanguard</button>
+          <button class="classBtn" data-class="Striker">Striker</button>
+          <button class="classBtn" data-class="Ranger">Ranger</button>
+        </div>
+
         <ul>
-          <li>1 / 2 / 3 weapons</li>
+          <li>1 / 2 / 3 to swap weapons</li>
           <li>Shift to dash</li>
           <li>R to reload</li>
           <li>E to heal</li>
+          <li>Q to use class ability</li>
         </ul>
+
         <button id="startBtn">Start Match</button>
       </div>
     </div>
