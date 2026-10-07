@@ -1,123 +1,607 @@
-* {
-  box-sizing: border-box;
+import './style.css';
+import * as THREE from 'three';
+
+const healthText = document.getElementById('health');
+const ammoText = document.getElementById('ammo');
+const scoreText = document.getElementById('score');
+const statusText = document.getElementById('statusText');
+const gameOver = document.getElementById('gameOver');
+const finalScore = document.getElementById('finalScore');
+const restartBtn = document.getElementById('restartBtn');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x7cb6ff);
+scene.fog = new THREE.Fog(0x7cb6ff, 18, 60);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.rotation.order = 'YXZ';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const raycaster = new THREE.Raycaster();
+const clock = new THREE.Clock();
+const worldBounds = 18;
+const pointer = { locked: false };
+const keys = {};
+
+const weaponDefs = [
+  { name: 'Rifle', magSize: 18, reserve: 90, damage: 22, fireRate: 0.16, spread: 0.02, pellets: 1 },
+  { name: 'Shotgun', magSize: 6, reserve: 30, damage: 11, fireRate: 0.62, spread: 0.18, pellets: 7 },
+  { name: 'SMG', magSize: 30, reserve: 120, damage: 10, fireRate: 0.09, spread: 0.05, pellets: 1 },
+];
+
+const player = {
+  position: new THREE.Vector3(0, 1.7, 10),
+  yaw: 0,
+  pitch: 0,
+  speed: 10,
+  health: 100,
+  fireCooldown: 0,
+  weaponIndex: 0,
+  dashCooldown: 0,
+  dashTimer: 0,
+  dashVelocity: new THREE.Vector3(),
+  healCooldown: 0,
+  inventory: weaponDefs.map((weapon) => ({
+    mag: weapon.magSize,
+    reserve: weapon.reserve,
+  })),
+};
+
+const state = {
+  score: 0,
+  gameOver: false,
+  enemies: [],
+  pickups: [],
+  round: 1,
+};
+
+function getActiveWeapon() {
+  return player.inventory[player.weaponIndex];
 }
 
-:root {
-  color-scheme: dark;
-  --bg: #07161c;
-  --panel: rgba(12, 22, 30, 0.72);
-  --border: rgba(255, 255, 255, 0.15);
-  --text: #eef7ff;
-  --accent: #67d7ff;
-  --danger: #ff6d6d;
-  --gold: #f9d76b;
+function updateHUD() {
+  const active = getActiveWeapon();
+  healthText.textContent = Math.max(0, Math.ceil(player.health));
+  ammoText.textContent = `${active.mag} / ${active.reserve}`;
+  scoreText.textContent = state.score;
 }
 
-html, body {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, "Segoe UI", sans-serif;
+function setWeapon(index) {
+  player.weaponIndex = (index + weaponDefs.length) % weaponDefs.length;
+  statusText.textContent = `${weaponDefs[player.weaponIndex].name} equipped`;
+  updateHUD();
 }
 
-canvas {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  cursor: crosshair;
+function resetMatch() {
+  state.score = 0;
+  state.round = 1;
+  state.gameOver = false;
+  gameOver.classList.add('hidden');
+
+  player.position.set(0, 1.7, 10);
+  player.yaw = 0;
+  player.pitch = 0;
+  player.health = 100;
+  player.fireCooldown = 0;
+  player.dashCooldown = 0;
+  player.dashTimer = 0;
+  player.healCooldown = 0;
+  player.weaponIndex = 0;
+
+  player.inventory = weaponDefs.map((weapon) => ({
+    mag: weapon.magSize,
+    reserve: weapon.reserve,
+  }));
+
+  state.enemies.forEach((enemy) => scene.remove(enemy.group));
+  state.enemies = [];
+  state.pickups.forEach((pickup) => scene.remove(pickup.mesh));
+  state.pickups = [];
+
+  camera.position.copy(player.position);
+  camera.rotation.set(0, 0, 0);
+  statusText.textContent = 'Arena live';
+  spawnWave();
+  updateHUD();
 }
 
-#hud {
-  position: fixed;
-  inset: 0 auto auto 0;
-  width: 100%;
-  padding: 20px;
-  pointer-events: none;
-  z-index: 10;
+function endMatch() {
+  state.gameOver = true;
+  finalScore.textContent = `Score: ${state.score}`;
+  gameOver.classList.remove('hidden');
+  statusText.textContent = 'Match over';
+  document.exitPointerLock();
 }
 
-.stats {
-  display: inline-flex;
-  gap: 20px;
-  padding: 12px 18px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+function initLights() {
+  const hemi = new THREE.HemisphereLight(0xdff7ff, 0x2d472f, 1.3);
+  scene.add(hemi);
+
+  const dir = new THREE.DirectionalLight(0xffffff, 1.15);
+  dir.position.set(12, 20, 10);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(1024, 1024);
+  dir.shadow.camera.left = -30;
+  dir.shadow.camera.right = 30;
+  dir.shadow.camera.top = 30;
+  dir.shadow.camera.bottom = -30;
+  scene.add(dir);
 }
 
-.stats span {
-  font-size: 0.94rem;
-  letter-spacing: 0.04em;
-  font-weight: 600;
+function addArena() {
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(44, 1, 44),
+    new THREE.MeshStandardMaterial({ color: 0x5e9f6d, roughness: 0.95 })
+  );
+  ground.position.set(0, -0.5, 0);
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(16, 0.45, 14, 55),
+    new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x1a73ff, emissiveIntensity: 0.25 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.03;
+  scene.add(ring);
+
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3b4a59,
+    metalness: 0.7,
+    roughness: 0.38,
+  });
+
+  const walls = [
+    { size: [44, 6, 1], pos: [0, 2.5, -22] },
+    { size: [44, 6, 1], pos: [0, 2.5, 22] },
+    { size: [1, 6, 44], pos: [-22, 2.5, 0] },
+    { size: [1, 6, 44], pos: [22, 2.5, 0] },
+  ];
+
+  walls.forEach((box) => {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(...box.size), wallMaterial);
+    wall.position.set(...box.pos);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    scene.add(wall);
+  });
+
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(3, 3.3, 1.3, 28),
+    new THREE.MeshStandardMaterial({ color: 0x34556c, metalness: 0.7, roughness: 0.22 })
+  );
+  pad.position.set(0, 0.7, 0);
+  pad.castShadow = true;
+  pad.receiveShadow = true;
+  scene.add(pad);
 }
 
-#statusText {
-  position: absolute;
-  left: 50%;
-  top: 18px;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
+function createWeaponModel() {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.2, 0.95),
+    new THREE.MeshStandardMaterial({ color: 0x1f2327, metalness: 0.72, roughness: 0.36 })
+  );
+  body.castShadow = true;
+
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, 0.8, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.9, roughness: 0.2 })
+  );
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0.18, -0.02, -0.72);
+  barrel.castShadow = true;
+
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.35, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x101315, metalness: 0.75, roughness: 0.35 })
+  );
+  grip.position.set(0, -0.25, 0.15);
+  grip.castShadow = true;
+
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffd166 })
+  );
+  glow.position.set(0.18, -0.02, -1.2);
+  glow.visible = false;
+
+  group.add(body, barrel, grip, glow);
+  group.position.set(0.35, -0.25, -0.5);
+  group.userData.muzzleGlow = glow;
+
+  camera.add(group);
+  scene.add(camera);
 }
 
-#gameOver {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(2, 8, 16, 0.68);
-  z-index: 20;
+function makePickup(type) {
+  const color = type === 'health' ? 0x62ff9e : 0xffd76e;
+  const mesh = new THREE.Mesh(
+    type === 'health'
+      ? new THREE.CylinderGeometry(0.45, 0.45, 0.5, 16)
+      : new THREE.BoxGeometry(0.7, 0.7, 0.7),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25 })
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const x = (Math.random() - 0.5) * 26;
+  const z = (Math.random() - 0.5) * 26;
+  mesh.position.set(x, 0.7, z);
+  scene.add(mesh);
+
+  state.pickups.push({ type, mesh });
 }
 
-#gameOver.hidden {
-  display: none;
+function collectPickup(pickup) {
+  scene.remove(pickup.mesh);
+  state.pickups = state.pickups.filter((item) => item !== pickup);
+
+  if (pickup.type === 'health') {
+    player.health = Math.min(100, player.health + 30);
+    statusText.textContent = 'Medkit collected';
+  } else {
+    player.inventory.forEach((weapon) => {
+      weapon.reserve += 20;
+    });
+    statusText.textContent = 'Ammo crate collected';
+  }
+
+  updateHUD();
 }
 
-.panel {
-  min-width: min(420px, 80vw);
-  background: rgba(9, 18, 24, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
-  padding: 28px;
-  text-align: center;
+function spawnEnemy() {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 1.5, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0xe76a5f, emissive: 0x350d0d, emissiveIntensity: 0.35 })
+  );
+  body.castShadow = true;
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.48, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xf6d3b5 })
+  );
+  head.position.y = 1.1;
+  head.castShadow = true;
+
+  const gun = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 0.18, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x1a1d20 })
+  );
+  gun.position.set(0.72, 0.38, 0.24);
+  gun.rotation.z = -Math.PI / 2;
+
+  group.add(body, head, gun);
+  group.position.set(
+    (Math.random() - 0.5) * 26,
+    0.75,
+    (Math.random() - 0.5) * 26
+  );
+  scene.add(group);
+
+  const enemy = {
+    group,
+    hitMeshes: [body, head],
+    health: 60 + state.round * 8,
+    speed: 2.3 + state.round * 0.17,
+    attackCooldown: 0,
+    flash: 0,
+  };
+
+  body.userData.enemy = enemy;
+  head.userData.enemy = enemy;
+
+  state.enemies.push(enemy);
 }
 
-.panel h1 {
-  margin: 0 0 12px;
-  font-size: clamp(2rem, 3vw, 3rem);
-  color: var(--gold);
+function spawnWave() {
+  const enemyCount = Math.min(3 + state.round, 12);
+  for (let i = 0; i < enemyCount; i += 1) {
+    spawnEnemy();
+  }
+  statusText.textContent = `Round ${state.round}`;
 }
 
-.panel p {
-  margin: 0 0 18px;
-  font-size: 1.1rem;
-  color: var(--text);
+function handleEnemyDeath(enemy) {
+  state.score += 100;
+  scene.remove(enemy.group);
+  state.enemies = state.enemies.filter((item) => item !== enemy);
+
+  if (Math.random() > 0.7) {
+    makePickup(Math.random() > 0.5 ? 'health' : 'ammo');
+  }
+
+  if (state.enemies.length === 0) {
+    state.round += 1;
+    spawnWave();
+  }
+
+  updateHUD();
 }
 
-button {
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), #78f0d2);
-  color: #04171d;
-  font-weight: 800;
-  font-size: 1rem;
-  padding: 12px 22px;
-  cursor: pointer;
-  transition: transform 0.15s ease;
+function applyDamage(amount) {
+  player.health -= amount;
+  if (player.health <= 0) {
+    player.health = 0;
+    endMatch();
+  }
+  updateHUD();
 }
 
-button:hover {
-  transform: translateY(-1px) scale(1.02);
+function reloadWeapon() {
+  const weapon = getActiveWeapon();
+  const weaponDef = weaponDefs[player.weaponIndex];
+  if (weapon.mag >= weaponDef.magSize || weapon.reserve <= 0) return;
+
+  const needed = weaponDef.magSize - weapon.mag;
+  const taken = Math.min(needed, weapon.reserve);
+  weapon.mag += taken;
+  weapon.reserve -= taken;
+  statusText.textContent = `${weaponDef.name} reloaded`;
+  updateHUD();
 }
+
+function fireShot() {
+  if (state.gameOver || !pointer.locked) return;
+
+  const activeWeapon = getActiveWeapon();
+  const weaponDef = weaponDefs[player.weaponIndex];
+
+  if (player.fireCooldown > 0) return;
+  if (activeWeapon.mag <= 0) {
+    reloadWeapon();
+    return;
+  }
+
+  if (activeWeapon.mag > 0) {
+    activeWeapon.mag -= 1;
+    player.fireCooldown = weaponDef.fireRate;
+    const muzzleGlow = camera.children.find((child) => child.type === 'Group')?.userData.muzzleGlow;
+    if (muzzleGlow) {
+      muzzleGlow.visible = true;
+      setTimeout(() => {
+        muzzleGlow.visible = false;
+      }, 45);
+    }
+
+    const baseDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+
+    for (let i = 0; i < weaponDef.pellets; i += 1) {
+      const spreadDir = baseDir.clone();
+      spreadDir.x += (Math.random() - 0.5) * weaponDef.spread;
+      spreadDir.y += (Math.random() - 0.5) * weaponDef.spread;
+      spreadDir.z += (Math.random() - 0.5) * weaponDef.spread;
+      spreadDir.normalize();
+
+      raycaster.set(camera.position.clone(), spreadDir);
+      const hits = raycaster.intersectObjects(
+        state.enemies.flatMap((enemy) => enemy.hitMeshes),
+        false
+      );
+
+      if (hits.length > 0) {
+        const object = hits[0].object;
+        const enemy = object.userData.enemy;
+        if (enemy) {
+          enemy.health -= weaponDef.damage;
+          enemy.flash = 0.1;
+          if (enemy.health <= 0) {
+            handleEnemyDeath(enemy);
+          }
+        }
+      }
+    }
+
+    updateHUD();
+  }
+}
+
+function activateDash() {
+  if (state.gameOver || player.dashCooldown > 0) return;
+
+  const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  const moveX = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  const moveZ = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+  const right = new THREE.Vector3(forward.z, 0, -forward.x);
+  const dir = new THREE.Vector3();
+
+  if (moveX || moveZ) {
+    dir.addScaledVector(forward, moveZ);
+    dir.addScaledVector(right, moveX);
+    dir.normalize();
+  } else {
+    dir.copy(forward);
+  }
+
+  player.dashVelocity.copy(dir.multiplyScalar(16));
+  player.dashTimer = 0.18;
+  player.dashCooldown = 2.2;
+  statusText.textContent = 'Dash!';
+}
+
+function useHeal() {
+  if (state.gameOver || player.healCooldown > 0) return;
+  if (player.health >= 100) {
+    statusText.textContent = 'Health full';
+    return;
+  }
+
+  player.health = Math.min(100, player.health + 35);
+  player.healCooldown = 8;
+  statusText.textContent = 'Heal used';
+  updateHUD();
+}
+
+function updatePlayer(delta) {
+  const moveX = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  const moveZ = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+
+  if (player.dashTimer > 0) {
+    player.position.addScaledVector(player.dashVelocity, delta);
+    player.dashTimer -= delta;
+  } else {
+    const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+    const right = new THREE.Vector3(forward.z, 0, -forward.x);
+    const moveVector = new THREE.Vector3();
+
+    if (moveX || moveZ) {
+      moveVector.addScaledVector(forward, moveZ);
+      moveVector.addScaledVector(right, moveX);
+      moveVector.normalize();
+    }
+
+    player.position.addScaledVector(moveVector, player.speed * delta);
+  }
+
+  player.position.x = THREE.MathUtils.clamp(player.position.x, -worldBounds, worldBounds);
+  player.position.z = THREE.MathUtils.clamp(player.position.z, -worldBounds, worldBounds);
+
+  camera.position.set(player.position.x, 1.7, player.position.z);
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
+
+  if (player.fireCooldown > 0) {
+    player.fireCooldown = Math.max(0, player.fireCooldown - delta);
+  }
+  if (player.dashCooldown > 0) {
+    player.dashCooldown = Math.max(0, player.dashCooldown - delta);
+  }
+  if (player.healCooldown > 0) {
+    player.healCooldown = Math.max(0, player.healCooldown - delta);
+  }
+
+  updateHUD();
+}
+
+function updateEnemies(delta) {
+  const playerPos = player.position.clone();
+
+  state.enemies.forEach((enemy) => {
+    const toPlayer = new THREE.Vector3().subVectors(playerPos, enemy.group.position);
+    const distance = toPlayer.length();
+
+    if (distance > 0.001) {
+      toPlayer.normalize();
+      enemy.group.position.addScaledVector(toPlayer, enemy.speed * delta);
+    }
+
+    enemy.group.lookAt(player.position.x, enemy.group.position.y, player.position.z);
+    enemy.group.position.y = 0.75;
+
+    if (enemy.flash > 0) {
+      enemy.flash = Math.max(0, enemy.flash - delta);
+      enemy.hitMeshes.forEach((mesh) => {
+        mesh.material.emissiveIntensity = 0.8;
+      });
+    } else {
+      enemy.hitMeshes.forEach((mesh) => {
+        mesh.material.emissiveIntensity = 0.35;
+      });
+    }
+
+    enemy.attackCooldown = Math.max(0, enemy.attackCooldown - delta);
+
+    if (distance < 2.1 && enemy.attackCooldown <= 0) {
+      applyDamage(11);
+      enemy.attackCooldown = 1.15;
+      statusText.textContent = 'You are hit';
+    }
+  });
+}
+
+function updatePickups() {
+  state.pickups.forEach((pickup) => {
+    pickup.mesh.rotation.y += 0.05;
+    pickup.mesh.position.y = 0.7 + Math.sin(clock.elapsedTime * 2 + pickup.mesh.position.x) * 0.15;
+
+    const distance = pickup.mesh.position.distanceTo(player.position);
+    if (distance < 1.5) {
+      collectPickup(pickup);
+    }
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.033);
+
+  if (!state.gameOver) {
+    updatePlayer(delta);
+    updateEnemies(delta);
+    updatePickups();
+  }
+
+  renderer.render(scene, camera);
+}
+
+function onPointerMove(event) {
+  if (!pointer.locked || state.gameOver) return;
+  player.yaw -= event.movementX * 0.0025;
+  player.pitch -= event.movementY * 0.0018;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -1.42, 1.42);
+}
+
+function onPointerLockChange() {
+  pointer.locked = document.pointerLockElement === renderer.domElement;
+  statusText.textContent = pointer.locked ? 'Arena live' : 'Click to lock cursor and start';
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+window.addEventListener('keydown', (event) => {
+  keys[event.code] = true;
+
+  if (event.code === 'Digit1') setWeapon(0);
+  if (event.code === 'Digit2') setWeapon(1);
+  if (event.code === 'Digit3') setWeapon(2);
+  if (event.code === 'KeyR') reloadWeapon();
+  if (event.code === 'KeyE') useHeal();
+  if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') activateDash();
+
+  if (event.code === 'Space' && !pointer.locked && !state.gameOver) {
+    renderer.domElement.requestPointerLock();
+  }
+});
+
+window.addEventListener('keyup', (event) => {
+  keys[event.code] = false;
+});
+window.addEventListener('mousemove', onPointerMove);
+document.addEventListener('pointerlockchange', onPointerLockChange);
+window.addEventListener('resize', onResize);
+renderer.domElement.addEventListener('click', () => {
+  if (!pointer.locked && !state.gameOver) {
+    renderer.domElement.requestPointerLock();
+  }
+});
+renderer.domElement.addEventListener('mousedown', (event) => {
+  if (event.button === 0) {
+    fireShot();
+  }
+});
+restartBtn.addEventListener('click', () => {
+  resetMatch();
+  renderer.domElement.requestPointerLock();
+});
+
+function setup() {
+  initLights();
+  addArena();
+  createWeaponModel();
+  resetMatch();
+  animate();
+}
+
+setup();
