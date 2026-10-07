@@ -4,13 +4,12 @@
 
 :root {
   color-scheme: dark;
-  --bg: #05151c;
-  --panel: rgba(10, 22, 30, 0.75);
-  --border: rgba(255, 255, 255, 0.14);
-  --text: #edfaff;
-  --accent: #71d6ff;
-  --gold: #f9d76b;
-  --danger: #ff7d7d;
+  --bg: #07151d;
+  --panel: rgba(9, 20, 30, 0.8);
+  --border: rgba(255, 255, 255, 0.18);
+  --text: #eaf9ff;
+  --accent: #74d6ff;
+  --gold: #f7d568;
 }
 
 html, body {
@@ -21,6 +20,10 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: Inter, "Segoe UI", sans-serif;
+}
+
+body {
+  position: relative;
 }
 
 canvas {
@@ -35,85 +38,142 @@ canvas {
   inset: 0 auto auto 0;
   width: 100%;
   padding: 18px;
-  z-index: 10;
+  z-index: 20;
   pointer-events: none;
 }
 
-#hud .stats {
+.topbar {
   display: inline-flex;
-  gap: 22px;
-  padding: 10px 16px;
-  background: var(--panel);
+  gap: 18px;
+  padding: 12px 18px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(8px);
+  background: rgba(8, 19, 28, 0.7);
+  backdrop-filter: blur(7px);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.18);
 }
 
-#hud .stats span {
+.topbar span {
   font-size: 0.9rem;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-weight: 700;
 }
 
 #statusText {
   position: absolute;
   left: 50%;
-  top: 18px;
+  top: 20px;
   transform: translateX(-50%);
-  background: rgba(5, 16, 22, 0.52);
+  padding: 10px 16px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  background: rgba(5, 11, 18, 0.5);
   color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
-#gameOver {
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+#crosshair span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+#crosshair span:first-child {
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+#crosshair span:last-child {
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.overlay {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(3, 10, 16, 0.7);
-  z-index: 30;
+  background: rgba(2, 9, 14, 0.56);
+  z-index: 25;
 }
 
-#gameOver.hidden {
+.overlay.hidden {
   display: none;
 }
 
 .panel {
-  min-width: min(420px, 80vw);
-  background: rgba(12, 20, 28, 0.95);
+  width: min(460px, 82vw);
+  padding: 28px 24px;
   border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 26px 28px;
+  border-radius: 20px;
+  background: rgba(12, 20, 29, 0.95);
   text-align: center;
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.33);
 }
 
-.panel h1 {
+.eyebrow {
   margin: 0 0 12px;
-  font-size: clamp(2.2rem, 4vw, 3.3rem);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+h1, h2 {
+  margin: 0;
   color: var(--gold);
 }
 
+h1 {
+  font-size: clamp(2.4rem, 5vw, 3.5rem);
+}
+
+h2 {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+}
+
 .panel p {
-  margin: 0 0 18px;
-  font-size: 1.1rem;
+  margin: 16px 0;
+  font-size: 1rem;
   color: var(--text);
+}
+
+.panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 22px;
+  display: grid;
+  gap: 8px;
+  color: #dff5ff;
 }
 
 button {
   border: none;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), #7af4d6);
-  color: #041b25;
   padding: 12px 22px;
-  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), #8dfac7);
+  color: #041b22;
   font-size: 1rem;
+  font-weight: 800;
   cursor: pointer;
   transition: transform 0.15s ease;
 }
